@@ -1,0 +1,17 @@
+name: Twitch Bot
+on:
+  schedule:
+    - cron: "0 */5 * * *" # Relance auto toutes les 5h
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+      - name: Run Bot
+        env:
+          TWITCH_NAME: ${{ secrets.TWITCH_NAME }}
+          TWITCH_TOKEN: ${{ secrets.TWITCH_TOKEN }}
+        run: python bot.py
