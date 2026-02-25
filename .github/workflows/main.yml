@@ -1,17 +1,28 @@
-name: Twitch Bot
+name: Twitch Bot Absolute Perf
+
 on:
   schedule:
-    - cron: "0 */5 * * *" # Relance auto toutes les 5h
+    - cron: '0 */5 * * *'
   workflow_dispatch:
 
 jobs:
-  build:
+  run:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v2
+      - uses: actions/checkout@v3
+      - uses: actions/setup-python@v4
+        with:
+          python-version: '3.9'
+      
+      - name: Install Playwright
+        run: |
+          pip install playwright
+          playwright install chromium
+          playwright install-deps chromium
+
       - name: Run Bot
         env:
           TWITCH_NAME: ${{ secrets.TWITCH_NAME }}
           TWITCH_TOKEN: ${{ secrets.TWITCH_TOKEN }}
-        run: python bot.py
+          TWITCH_COOKIE: ${{ secrets.TWITCH_COOKIE }}
+        run: python -u bot.py
