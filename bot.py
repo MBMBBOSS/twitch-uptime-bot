@@ -1,7 +1,7 @@
 import socket, os, time, urllib.request, random, threading
 from playwright.sync_api import sync_playwright
 
-# --- CONFIGURATION ---
+# --- CONFIGURATION (Gardez la même) ---
 NICK = os.getenv("TWITCH_NAME")
 PASS = os.getenv("TWITCH_TOKEN")
 COOKIE = os.getenv("TWITCH_COOKIE") 
@@ -14,28 +14,28 @@ COMMAND_ALIASES = [
     "!clavier", "!reseaux", "!res", "!casque", "!bureau"
 ]
 
-API_SOURCES = {
-    "DecAPI": f"https://decapi.me/twitch/uptime/{CHAN.replace('#', '')}"
-}
-
 def send_msg(sock, msg):
     sock.send(f"PRIVMSG {CHAN} :{msg}\r\n".encode('utf-8'))
 
 def check_live_status():
-    for name, url in API_SOURCES.items():
-        try:
-            req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
-            res = urllib.request.urlopen(req, timeout=5).read().decode('utf-8')
-            if "offline" not in res.lower() and "not live" not in res.lower() and "error" not in res.lower():
-                return True
-        except: continue
+    url = f"https://decapi.me/twitch/uptime/{CHAN.replace('#', '')}"
+    try:
+        req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+        res = urllib.request.urlopen(req, timeout=5).read().decode('utf-8')
+        if "offline" not in res.lower() and "not live" not in res.lower():
+            return True
+    except: pass
     return False
 
 def run_headless_viewer():
-    """Simule un spectateur vidéo réel pour garantir l'uptime 100%."""
+    """Simule un spectateur vidéo réel avec corrections pour éviter les Timeouts."""
     with sync_playwright() as p:
+        # Utilisation d'un User-Agent réaliste pour passer les filtres Twitch
         browser = p.chromium.launch(headless=True)
-        context = browser.new_context()
+        context = browser.new_context(
+            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36"
+        )
+        
         context.add_cookies([{
             'name': 'auth-token',
             'value': COOKIE,
@@ -44,23 +44,27 @@ def run_headless_viewer():
         }])
         
         page = context.new_page()
-        print(f"[*] Navigateur : Connexion au flux de {CHAN}...")
-        # On attend que la page soit bien chargée
-        page.goto(f"https://www.twitch.tv/{CHAN.replace('#', '')}", wait_until="networkidle")
+        print(f"[*] Navigateur : Tentative de connexion à {CHAN}...")
         
         try:
-            page.wait_for_selector('video', timeout=20000)
+            # On change networkidle par domcontentloaded et on augmente le timeout à 90s
+            page.goto(f"https://www.twitch.tv/{CHAN.replace('#', '')}", 
+                      wait_until="domcontentloaded", 
+                      timeout=90000)
+            
+            # On attend un peu que le lecteur vidéo apparaisse
+            page.wait_for_selector('video', timeout=30000)
             page.evaluate("document.querySelector('video').muted = true")
-            print("[*] Flux vidéo validé (Navigateur).")
-        except:
-            print("[!] Vidéo non détectée, mais la page reste ouverte.")
+            print("[*] Flux vidéo validé et stabilisé (Navigateur).")
+        except Exception as e:
+            print(f"[!] Note : Le navigateur a rencontré une lenteur ({e}), mais la session est maintenue.")
 
-        # On maintient la page ouverte pendant la durée du workflow
-        time.sleep(19000) 
+        # Maintient la session pour l'uptime (environ 5h15)
+        time.sleep(18900) 
         browser.close()
 
 def irc_loop():
-    """Gère le chat avec votre logique d'intervalle originale."""
+    """Gère le chat avec vos intervalles d'origine (35-55 min)."""
     sock = socket.socket()
     sock.settimeout(2)
     try:
@@ -68,70 +72,45 @@ def irc_loop():
         sock.send(f"PASS {PASS}\r\n".encode('utf-8'))
         sock.send(f"NICK {NICK}\r\n".encode('utf-8'))
         sock.send(f"JOIN {CHAN}\r\n".encode('utf-8'))
-        print("[*] IRC : Connecté au chat.")
+        print("[*] IRC : Connecté.")
     except: return
 
-    is_live_detected = False
-    live_start_time = 0
-    sent_5s_msg = False
-    sent_1m_msg = False
-    last_activity = 0
-    next_random_interval = random.randint(2100, 3300) # Votre intervalle 35-55 min
-    
+    is_live_detected, sent_5s_msg, sent_1m_msg = False, False, False
+    live_start_time, last_activity = 0, 0
+    next_random_interval = random.randint(2100, 3300) 
     start_run = time.time()
     
     while time.time() - start_run < 19100:
         now = time.time()
-        
-        # Gestion PING/PONG
         try:
             data = sock.recv(2048).decode('utf-8')
             if data.startswith('PING'):
                 sock.send("PONG :tmi.twitch.tv\r\n".encode('utf-8'))
         except: pass
 
-        # Vérification du live toutes les 20s
-        if now % 20 < 1: 
+        if int(now) % 20 == 0:
             if check_live_status():
                 if not is_live_detected:
-                    is_live_detected = True
-                    live_start_time = now
-                    print("[!] Live détecté par l'IRC.")
-                
+                    is_live_detected, live_start_time = True, now
                 elapsed = now - live_start_time
-                
-                # Message 5 secondes
                 if elapsed >= 5 and not sent_5s_msg:
                     send_msg(sock, "cc")
                     sent_5s_msg = True
-                
-                # Message 1 minute
                 if elapsed >= 60 and not sent_1m_msg:
                     send_msg(sock, "!myuptime")
-                    sent_1m_msg = True
-                    last_activity = now
-                
-                # Messages aléatoires (Intervalle original : 35-55 min)
+                    sent_1m_msg, last_activity = True, now
                 if sent_1m_msg and (now - last_activity >= next_random_interval):
-                    msg = random.choice(COMMAND_ALIASES)
-                    send_msg(sock, msg)
-                    print(f"[>] Message aléatoire envoyé : {msg}")
+                    send_msg(sock, random.choice(COMMAND_ALIASES))
                     last_activity = now
                     next_random_interval = random.randint(2100, 3300)
             else:
-                is_live_detected = False
-                sent_5s_msg = False
-                sent_1m_msg = False
-
+                is_live_detected, sent_5s_msg, sent_1m_msg = False, False, False
         time.sleep(1)
 
 if __name__ == "__main__":
-    # Lancement parallèle du Viewer (Uptime) et de l'IRC (Messages)
     t1 = threading.Thread(target=run_headless_viewer)
     t2 = threading.Thread(target=irc_loop)
-    
     t1.start()
     t2.start()
-    
     t1.join()
     t2.join()
