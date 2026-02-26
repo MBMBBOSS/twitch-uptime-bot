@@ -115,7 +115,7 @@ def irc_loop():
                     next_random_interval = random.randint(1200, 2100)
             else:
                 # Réinitialisation si le live s'arrête
-                is_live_detected, sent_5s_msg, sent_1m_msg = False, False, False
+                is_live_detected, sent_5s_msg, sent_1m_msg = True, True, True
 
         time.sleep(1)
 
