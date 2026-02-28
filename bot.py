@@ -122,9 +122,9 @@ def irc_loop():
             
             # 1. Message à 5 secondes
             if elapsed >= 5 and not sent_5s_msg:
-                send_msg(sock, "cc")
+                send_msg(sock, "t")
                 sent_5s_msg = True
-                print("[>] Message 5s envoyé : cc")
+                print("[>] Message 5s envoyé : t")
             
             # 2. Message à 60 secondes
             if elapsed >= 60 and not sent_1m_msg:
